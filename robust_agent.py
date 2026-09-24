@@ -166,6 +166,44 @@ def calculator(expression: str) -> str:
     except Exception as e:
         return f"错误：计算出错（{type(e).__name__}: {e}）"
 
+import subprocess
+import os
+
+# 白名单：允许启动的软件
+ALLOWED_APPS = {
+    "记事本": "notepad.exe",
+    "计算器": "calc.exe",
+    "画图": "mspaint.exe",
+    "浏览器": "msedge.exe",          # Edge，Win11 自带
+    "资源管理器": "explorer.exe",
+    "命令提示符": "cmd.exe",
+    "任务管理器": "taskmgr.exe",
+}
+
+
+def launch_app(name: str) -> str:
+    """启动电脑上的软件。只支持白名单里的程序。"""
+    if not name or not isinstance(name, str):
+        return "错误：软件名不能为空"
+
+    name = name.strip()
+
+    # 防线 1：白名单拦截
+    if name not in ALLOWED_APPS:
+        allowed = "、".join(ALLOWED_APPS.keys())
+        return f"错误：不支持启动'{name}'。只支持：{allowed}"
+
+    exe = ALLOWED_APPS[name]
+
+    # 防线 2：真的启动
+    try:
+        subprocess.Popen(exe, shell=False)
+        return f"已启动：{name}（{exe}）"
+    except FileNotFoundError:
+        return f"错误：找不到程序 {exe}"
+    except Exception as e:
+        return f"错误：启动失败（{type(e).__name__}: {e}）"
+
 
 # ==================== 2. 工具说明书 ====================
 
@@ -217,28 +255,66 @@ tools = [
             },
         },
     },
+    {
+    "type": "function",
+    "function": {
+        "name": "launch_app",
+        "description": (
+            "启动电脑上的常用软件。"
+            "支持：记事本、计算器、画图、浏览器、资源管理器、命令提示符、任务管理器。"
+            "仅当用户明确要求打开某个软件时使用。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "软件名称，例如 '记事本'、'计算器'"
+                }
+            },
+            "required": ["name"],
+        },
+    },
+},
 ]
 
 TOOL_MAP = {
     "geocode": geocode,
     "get_weather": get_weather,
     "calculator": calculator,
+    "launch_app": launch_app,
 }
 
 
 # ==================== 3. 会话状态 ====================
 
-SYSTEM_PROMPT = """你是一个天气和计算助理。
+SYSTEM_PROMPT = """你是一个电脑助手，可以查询天气、做数学计算、启动电脑上的常用软件。
 
 能力范围：
 1. 查询任意城市的天气
 2. 做数学计算
+3. 启动电脑上白名单内的软件
 
 规则：
-- 只回答天气、地理、数学相关问题；其他领域礼貌拒绝
+- 只回答天气、地理、数学、启动软件相关的问题；其他领域礼貌拒绝
 - 遇到省份、地区名，先追问具体城市
 - 涉及精确计算必须调用 calculator，禁止心算
 - 回答简短
+
+启动软件的规则（重要）：
+- 当用户要求启动软件时，你必须先回复："我将启动 XXX，请回复'确认'以继续。"
+- 不要在这一步就调用 launch_app 工具
+- 只有用户明确回复"确认"、"好"、"是"、"启动吧"等肯定词后，才调用 launch_app
+- 用户如果回复任何否定或换话题，就放弃启动
+例子：
+用户：打开记事本
+你：我将启动 记事本，请回复'确认'以继续。
+用户：确认
+你：（调用 launch_app，参数 name="记事本"）
+用户：打开计算器
+你：我将启动 计算器，请回复'确认'以继续。
+用户：不用了
+你：好的，已取消。
 
 如果工具返回"错误：..."，说明参数有问题，你可以尝试修正后重试一次；仍失败就如实告诉用户。
 """
